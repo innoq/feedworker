@@ -7,7 +7,10 @@
 
 (defn log [& msgs]
   (let [now (java.util.Date.)]
-    (apply println (str now) "---" msgs)))
+    (apply println (str now) "---" msgs)
+    (doseq [msg msgs]
+      (when (instance? Exception msg)
+        (.printStackTrace msg)))))
 
 (defprotocol ProcessingStrategy
   (should-be-processed? [this id])
@@ -64,7 +67,7 @@
               (mark-processed processing-strategy (:uri entry))
               (reset! res r))
             (catch Exception e
-              (log (str "failed to handle " entry ": " e))))
+              (log (pr-str "failed to handle " entry) e)))
           (when (= :retry @res)
             (mark-for-retry processing-strategy (:uri entry)))))))
 
@@ -118,7 +121,7 @@
                  (assoc worker ::task
                         (fn []
                           (let [s (::processing-strategy worker)
-                                h (::handler worker)
+                                h (:handler worker)
                                 feed ((::feed-loader worker))]
                             (when feed
                               (process-feed s feed h (::id worker) conf))))))))

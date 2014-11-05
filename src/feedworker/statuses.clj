@@ -1,5 +1,6 @@
 (ns feedworker.statuses
-  (:require [clj-http.client :as http]))
+  (:require [clj-http.client :as http]
+            [feedworker.core :as feedworker]))
 
 (defn linkified-mentions [text]
   (let [group-matches (re-seq #"@<a[^>]*>(\w+)</a>" text)]
@@ -18,7 +19,7 @@
   (str (-> entry :contents first :value) " (" (:link entry) ")"))
 
 (defn naveed-req [mentions subject body naveed-conf]
-  {:form-params {:recipient mentions
+  {:form-params {:recipient mentions ;; TODO verify if this is the correct way to set multiple values for a parameter
                  :subject subject
                  :body body}
    :headers {"Authorization" (str "Bearer " (:token naveed-conf))}
@@ -37,17 +38,6 @@
           :retry
           resp)))))
 
-(def statuses "https://intern.innoq.com/statuses/updates?format=atom")
-
-(def mention "@<a href='/statuses/updates?author=st'>st</a> Kandidat @<a>foo</a>")
-
-
-
-
-(def iblog "https://internal.innoq.com/blogging/index-all.atom")
-
-;; (process-feed falo (parse-secure-feed iblog <usr> <pwd>) #(-> % :uri println))
-
 (def conf {:workers
            {:statuses-mentions {:url "http://localhost:8080/statuses/updates?format=atom"
                                 :handler handler
@@ -58,3 +48,6 @@
                     :token "<token>"
                     :conn-timeout 2000
                     :socket-timeout 2000}})
+
+(defn -main [& args]
+  (feedworker/run! conf))
