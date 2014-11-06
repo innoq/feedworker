@@ -15,7 +15,6 @@ pom.xml.asc
 bin/
 .classpath
 .project
-processedentries/*
-!processedentries/.gitkeep
+processedentries
 .#*
 \#*#

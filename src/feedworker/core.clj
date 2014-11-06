@@ -102,7 +102,7 @@
                  (fn [worker]
                    (let [workername (-> worker ::id name)
                          dir (File. entries-dir workername)]
-                     (.mkdir dir)
+                     (.mkdirs dir)
                      (assoc worker ::processing-strategy
                             (processing-strategy 
                              (:processing-strategy worker) 
