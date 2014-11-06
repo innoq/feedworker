@@ -19,7 +19,7 @@
   (str (-> entry :contents first :value) " (" (:link entry) ")"))
 
 (defn naveed-req [mentions subject body naveed-conf]
-  {:form-params {:recipient mentions ;; TODO verify if this is the correct way to set multiple values for a parameter
+  {:form-params {:recipient mentions
                  :subject subject
                  :body body}
    :headers {"Authorization" (str "Bearer " (:token naveed-conf))}
@@ -31,25 +31,50 @@
   (let [mentions (extract-mentions entry)]
     (log "extracted mentions" mentions)
     (when (seq mentions)
-      (let [resp (println (-> conf :naveed :url) ;; TODO http/post
-                          (naveed-req mentions 
-                                      (subject entry)
-                                      (body entry)
-                                      (:naveed conf)))]
+      (let [resp (http/post (-> conf :naveed :url)
+                            (naveed-req mentions
+                                        (subject entry)
+                                        (body entry)
+                                        (:naveed conf)))]
         (if (= 503 (:status resp))
           :break
           resp)))))
 
-(def conf {:workers
-           {:statuses-mentions {:url "http://localhost:8080/statuses/updates?format=atom"
-                                :handler handler
-                                :processing-strategy :at-least-once
-                                :repeat 10000}}
-           :processed-entries-dir "processedentries"
-           :naveed {:url "<url>"
-                    :token "<token>"
-                    :conn-timeout 2000
-                    :socket-timeout 2000}})
+(def conf-example {:workers
+                   {:statuses-mentions {:url "http://<statuseshost>/statuses/updates?format=atom"
+                                        :handler 'feedworker.statuses/handler
+                                        :processing-strategy :at-most-once
+                                        :repeat 10000}}
+                   :processed-entries-dir "processedentries"
+                   :naveed {:url "http://<naveedhost>/outbox"
+                            :token "<token>"
+                            :conn-timeout 2000
+                            :socket-timeout 2000}})
 
-(defn -main [& args]
-  (feedworker/run! conf))
+(defn map-vals
+  "applies function f to every value in map m"
+  [f m]
+  (->> m
+       (map (fn [[k v]]
+              [k (f v)]))
+       (into {})))
+
+(defn create-handlers [config]
+  (update-in config [:workers]
+             (fn [workers]
+               (map-vals (fn [worker]
+                           (update-in worker [:handler] eval))
+                         workers))))
+
+(defn parse-config [filepath]
+  (-> filepath
+      slurp
+      read-string
+      create-handlers))
+
+(defn -main [& [config]]
+  (if config
+    (feedworker/run! (parse-config config))
+    (do
+      (println "usage: first argument must be a file which contains a config like this:")
+      (clojure.pprint/pprint conf-example))))

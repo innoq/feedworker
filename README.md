@@ -6,7 +6,13 @@ Utility for processing RSS/Atom feeds.
 
 Install [Leiningen](http://leiningen.org/) and a recent JDK. Then:
 
-	lein run
+    lein run config.example.clj
+
+Log messages are written to stdout, exceptions are written to stderr. So:
+
+    lein run config.example.clj 2> exceptions 1> log
+
+Log rotation is not included. Also, there is no cleanup for the :processed-entries-dir (see below).
 
 ## What's this?
 
@@ -24,11 +30,13 @@ Its configured with a Clojure data structure like this:
               :conn-timeout 2000
               :socket-timeout 2000}}
 
-The actuall processing of each feed entry is done by the given handler (here: notify-mentions-via-naveed). It's a function of three arguments:
+All durations are given in milliseconds. The actuall processing of each feed entry is done by the given handler (here: notify-mentions-via-naveed). It's a function of three arguments:
 
 * A single feed entry as parsed by [feedparser-clj](https://github.com/scsibug/feedparser-clj).
 * The ID of the worker (e.g. :statuses-mentions).
 * The entire configuration.
+
+Paginated feeds are not properly supported, yet.
 
 ## License
 
