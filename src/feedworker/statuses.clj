@@ -1,6 +1,6 @@
 (ns feedworker.statuses
   (:require [clj-http.client :as http]
-            [feedworker.core :as feedworker]))
+            [feedworker.core :as feedworker :refer [log]]))
 
 (defn linkified-mentions [text]
   (let [group-matches (re-seq #"@<a[^>]*>(\w+)</a>" text)]
@@ -27,7 +27,9 @@
    :socket-timeout (:socket-timeout naveed-conf 2000)})
 
 (defn handler [entry worker-id conf]
+  (log "received" entry)
   (let [mentions (extract-mentions entry)]
+    (log "extracted mentions" mentions)
     (when (seq mentions)
       (let [resp (println (-> conf :naveed :url) ;; TODO http/post
                           (naveed-req mentions 
@@ -35,7 +37,7 @@
                                       (body entry)
                                       (:naveed conf)))]
         (if (= 503 (:status resp))
-          :retry
+          :break
           resp)))))
 
 (def conf {:workers

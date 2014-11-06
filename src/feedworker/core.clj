@@ -58,18 +58,24 @@
       :body
       parse-feed))
 
+(defn process-entry [entry handler worker-id conf processing-strategy]
+  (try
+    (let [r (handler entry worker-id conf)]
+      (mark-processed processing-strategy (:uri entry))
+      r)
+    (catch Exception e
+      (log (pr-str "failed to handle " entry) e))))
+
 (defn process-feed [processing-strategy feed handler worker-id conf]
-    (doseq [entry (:entries feed)]
-      (when (should-be-processed? processing-strategy (:uri entry)) ;; not using filter to avoid chunked lazyness
-        (let [res (atom nil)]
-          (try
-            (let [r (handler entry worker-id conf)]
-              (mark-processed processing-strategy (:uri entry))
-              (reset! res r))
-            (catch Exception e
-              (log (pr-str "failed to handle " entry) e)))
-          (when (= :retry @res)
-            (mark-for-retry processing-strategy (:uri entry)))))))
+    (loop [[entry & remaining] (reverse (:entries feed))]
+      (if (should-be-processed? processing-strategy (:uri entry)) ;; not using filter to avoid chunked lazyness
+        (let [res (process-entry entry handler worker-id conf processing-strategy)]
+          (if (= :break res)
+            (mark-for-retry processing-strategy (:uri entry))
+            (when (seq remaining)
+              (recur remaining))))
+        (when (seq remaining)
+          (recur remaining)))))
 
 (defn map-workers [conf f]
   (update-in conf [:workers]
