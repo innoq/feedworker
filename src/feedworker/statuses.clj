@@ -23,6 +23,7 @@
                  :subject subject
                  :body body}
    :headers {"Authorization" (str "Bearer " (:token naveed-conf))}
+   :throw-exceptions false
    :conn-timeout (:conn-timeout naveed-conf 2000)
    :socket-timeout (:socket-timeout naveed-conf 2000)})
 
@@ -30,15 +31,17 @@
   (log "received" entry)
   (let [mentions (extract-mentions entry)]
     (log "extracted mentions" mentions)
-    (when (seq mentions)
-      (let [resp (http/post (-> conf :naveed :url)
-                            (naveed-req mentions
-                                        (subject entry)
-                                        (body entry)
-                                        (:naveed conf)))]
+    (if (seq mentions)
+      (let [req (naveed-req mentions
+                            (subject entry)
+                            (body entry)
+                            (:naveed conf))
+            resp (http/post (-> conf :naveed :url) req)]
         (if (= 503 (:status resp))
           :break
-          resp)))))
+          {:response resp
+           :request req}))
+      (str "no mentions found"))))
 
 (def conf-example {:workers
                    {:statuses-mentions {:url "http://<statuseshost>/statuses/updates?format=atom"

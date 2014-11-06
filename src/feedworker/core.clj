@@ -49,6 +49,14 @@
       (.delete (file-for processed-dir id))
       (catch Exception _))))
 
+(defprotocol Tracer
+  (trace [this entry-id msg]))
+
+(defrecord FileTracer [processed-dir]
+  Tracer
+  (trace [_ entry-id msg]
+    (spit (file-for processed-dir entry-id) (pr-str msg))))
+
 (defn parse-secure-feed [url user-and-pwd]
   (-> url
       (http/get {:basic-auth user-and-pwd
@@ -58,22 +66,29 @@
       :body
       parse-feed))
 
+(defn trace-msg [result entry]
+  {:result result
+   :entry entry
+   :processed-on (java.util.Date.)})
+
 (defn process-entry [entry handler worker-id conf processing-strategy]
   (try
-    (let [r (handler entry worker-id conf)]
+    (let [result (handler entry worker-id conf)]
       (mark-processed processing-strategy (:uri entry))
-      r)
+      result)
     (catch Exception e
-      (log (pr-str "failed to handle " entry) e))))
+      (log "failed to handle" (pr-str entry) e))))
 
-(defn process-feed [processing-strategy feed handler worker-id conf]
+(defn process-feed [processing-strategy tracer feed handler worker-id conf]
     (loop [[entry & remaining] (reverse (:entries feed))]
       (if (should-be-processed? processing-strategy (:uri entry)) ;; not using filter to avoid chunked lazyness
-        (let [res (process-entry entry handler worker-id conf processing-strategy)]
-          (if (= :break res)
+        (let [result (process-entry entry handler worker-id conf processing-strategy)]
+          (if (= :break result)
             (mark-for-retry processing-strategy (:uri entry))
-            (when (seq remaining)
-              (recur remaining))))
+            (do
+              (trace tracer (:uri entry) (trace-msg result entry))
+              (when (seq remaining)
+                (recur remaining)))))
         (when (seq remaining)
           (recur remaining)))))
 
@@ -96,17 +111,25 @@
     :at-least-once (FileAtLeastOnce. (.getPath dir))
     :at-most-once (FileAtMostOnce. (.getPath dir))))
 
+(defn worker-dir [worker-id conf]
+  (let [entries-dir (File. (:processed-entries-dir conf))
+        workername (name worker-id)]
+    (File. entries-dir workername)))
+
+(defn create-worker-dirs [conf]
+  (map-workers conf
+               (fn [worker]
+                 (let [dir (worker-dir (::id worker) conf)]
+                   (.mkdirs dir)
+                   (assoc worker ::dir dir)))))
+
 (defn create-processing-strategies [conf]
-  (let [entries-dir (File. (:processed-entries-dir conf))]
     (map-workers conf 
                  (fn [worker]
-                   (let [workername (-> worker ::id name)
-                         dir (File. entries-dir workername)]
-                     (.mkdirs dir)
                      (assoc worker ::processing-strategy
                             (processing-strategy 
                              (:processing-strategy worker) 
-                             dir)))))))
+                             (::dir worker))))))
 
 (defn create-feed-loaders [conf]
   (map-workers conf
@@ -121,16 +144,23 @@
                               (log (str "failed to load feed with url " (:url worker) ": " e))
                               nil)))))))
 
+(defn create-tracers [conf]
+  (map-workers conf
+               (fn [worker]
+                 (assoc worker ::tracer
+                        (FileTracer. (.getAbsolutePath (::dir worker)))))))
+
 (defn create-tasks [conf]
   (map-workers conf
                (fn [worker]
                  (assoc worker ::task
                         (fn []
                           (let [s (::processing-strategy worker)
+                                t (::tracer worker)
                                 h (:handler worker)
                                 feed ((::feed-loader worker))]
                             (when feed
-                              (process-feed s feed h (::id worker) conf))))))))
+                              (process-feed s t feed h (::id worker) conf))))))))
 
 (defn create-schedulers [conf]
   (map-workers conf
@@ -158,8 +188,10 @@
 (defn prepare [conf]
   (-> conf
       add-worker-ids
+      create-worker-dirs
       create-processing-strategies
       create-feed-loaders
+      create-tracers
       create-tasks))
 
 (defn schedule! [prepared-conf]
