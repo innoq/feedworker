@@ -79,7 +79,8 @@
   (let [result (try
                  (handler entry worker-id conf)
                  (catch Exception e
-                   (log "failed processing" (pr-str entry) e)))]
+                   (log "failed processing" (pr-str entry) e)
+                   e))]
     (after-processing processing-strategy (:uri entry))
     result))
 

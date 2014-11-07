@@ -14,11 +14,12 @@ Log messages are written to stdout, exceptions are written to stderr. So:
 
 ## What's this?
 
-The purpose of feedworker is to make processing feeds easy. It manages which entries have been processed already and schedules periodic processing.
+The purpose of Feedworker is to make processing feeds easy. It manages which entries have been processed already and schedules periodic processing.
 
-Its configured with a Clojure data structure like this:
+It's configured with a Clojure data structure like this:
 
     {:workers {:statuses-mentions {:url "http://localhost:8080/statuses/updates?format=atom"
+                                   :basic-auth ["<user>" "<pwd>"]
                                    :handler notify-mentions-via-naveed
                                    :processing-strategy :at-least-once
                                    :repeat 10000}}
