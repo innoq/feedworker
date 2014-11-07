@@ -12,9 +12,17 @@
       (when (instance? Exception msg)
         (.printStackTrace msg)))))
 
+(defmacro on-exception [exceptional-result & body]
+  `(try
+     ~@body
+     (catch Exception e#
+       (log e#)
+       ~exceptional-result)))
+
 (defprotocol ProcessingStrategy
-  (should-be-processed? [this id])
-  (mark-processed [this id])
+  (already-processed? [this id])
+  (start-processing? [this id])
+  (after-processing [this id])
   (mark-for-retry [this id]))
 
 (defn file-for [processed-dir id]
@@ -24,30 +32,26 @@
 
 (defrecord FileAtMostOnce [processed-dir]
   ProcessingStrategy
-  (should-be-processed? [_ id]
-    (try
-      (.createNewFile (file-for processed-dir id))
-      (catch Exception _ false)))
-  (mark-processed [_ _])
+  (already-processed? [_ id]
+    (.exists (file-for processed-dir id)))
+  (start-processing? [_ id]
+    (.createNewFile (file-for processed-dir id)))
+  (after-processing [_ _])
   (mark-for-retry [_ id]
-    (try
-      (.delete (file-for processed-dir id))
-      (catch Exception _))))
+    (on-exception nil
+      (.delete (file-for processed-dir id)))))
 
 (defrecord FileAtLeastOnce [processed-dir]
   ProcessingStrategy
-  (should-be-processed? [_ id]
-    (try 
-      (not (.exists (file-for processed-dir id)))
-      (catch Exception _)))
-  (mark-processed [_ id]
-    (try
-      (.createNewFile (file-for processed-dir id))
-      (catch Exception _ false)))
+  (already-processed? [_ id]
+    (.exists (file-for processed-dir id)))
+  (start-processing? [_ id]
+    (not (.exists (file-for processed-dir id))))
+  (after-processing [_ id]
+    (.createNewFile (file-for processed-dir id)))
   (mark-for-retry [_ id]
-    (try
-      (.delete (file-for processed-dir id))
-      (catch Exception _))))
+    (on-exception nil
+      (.delete (file-for processed-dir id)))))
 
 (defprotocol Tracer
   (trace [this entry-id msg]))
@@ -72,25 +76,30 @@
    :processed-on (java.util.Date.)})
 
 (defn process-entry [entry handler worker-id conf processing-strategy]
-  (try
-    (let [result (handler entry worker-id conf)]
-      (mark-processed processing-strategy (:uri entry))
-      result)
-    (catch Exception e
-      (log "failed to handle" (pr-str entry) e))))
+  (let [result (try
+                 (handler entry worker-id conf)
+                 (catch Exception e
+                   (log "failed processing" (pr-str entry) e)))]
+    (after-processing processing-strategy (:uri entry))
+    result))
 
-(defn process-feed [processing-strategy tracer feed handler worker-id conf]
-    (loop [[entry & remaining] (reverse (:entries feed))]
-      (if (should-be-processed? processing-strategy (:uri entry)) ;; not using filter to avoid chunked lazyness
+(defn find-unprocessed-entries [feed-pages processing-strategy]
+  (->> feed-pages
+       (mapcat :entries)
+       (take-while #(not (already-processed? processing-strategy (:uri %))))))
+
+(defn process-feed [processing-strategy tracer feed-pages handler worker-id conf]
+  (let [entries (find-unprocessed-entries feed-pages processing-strategy)] ;; find entries which so far have not been processed
+    (loop [[entry & remaining] (reverse entries)] ;; process entries starting from the oldest one
+      (when (start-processing? processing-strategy (:uri entry)) ;; check again to make sure no one else processed the entry
+                                                                 ;; (and possibly persist the fact that the entry has been processed)
         (let [result (process-entry entry handler worker-id conf processing-strategy)]
           (if (= :break result)
-            (mark-for-retry processing-strategy (:uri entry))
+            (mark-for-retry processing-strategy (:uri entry)) ;; break out of loop and process entry again on next run
             (do
               (trace tracer (:uri entry) (trace-msg result entry))
               (when (seq remaining)
-                (recur remaining)))))
-        (when (seq remaining)
-          (recur remaining)))))
+                (recur remaining)))))))))
 
 (defn map-workers [conf f]
   (update-in conf [:workers]
@@ -138,8 +147,9 @@
                         (fn []
                           (try
                             (if (contains? worker :basic-auth)
-                              (parse-secure-feed (:url worker) (:basic-auth worker))
-                              (parse-feed (:url worker)))
+                              ;; TODO load seq of all pages of feed
+                              [(parse-secure-feed (:url worker) (:basic-auth worker))]
+                              [(parse-feed (:url worker))])
                             (catch Exception e
                               (log (str "failed to load feed with url " (:url worker) ": " e))
                               nil)))))))
@@ -158,9 +168,9 @@
                           (let [s (::processing-strategy worker)
                                 t (::tracer worker)
                                 h (:handler worker)
-                                feed ((::feed-loader worker))]
-                            (when feed
-                              (process-feed s t feed h (::id worker) conf))))))))
+                                feed-pages ((::feed-loader worker))]
+                            (when (seq feed-pages)
+                              (process-feed s t feed-pages h (::id worker) conf))))))))
 
 (defn create-schedulers [conf]
   (map-workers conf

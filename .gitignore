@@ -18,3 +18,4 @@ bin/
 processedentries
 .#*
 \#*#
+testconfig.clj
