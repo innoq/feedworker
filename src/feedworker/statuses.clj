@@ -43,17 +43,6 @@
            :request req}))
       (str "no mentions found"))))
 
-(def conf-example {:workers
-                   {:statuses-mentions {:url "http://<statuseshost>/statuses/updates?format=atom"
-                                        :handler 'feedworker.statuses/handler
-                                        :processing-strategy :at-most-once
-                                        :repeat 10000}}
-                   :processed-entries-dir "processedentries"
-                   :naveed {:url "http://<naveedhost>/outbox"
-                            :token "<token>"
-                            :conn-timeout 2000
-                            :socket-timeout 2000}})
-
 (defn map-vals
   "applies function f to every value in map m"
   [f m]
@@ -80,4 +69,4 @@
     (feedworker/run! (parse-config config))
     (do
       (println "usage: first argument must be a file which contains a config like this:")
-      (clojure.pprint/pprint conf-example))))
+      (clojure.pprint/pprint feedworker/conf-example))))

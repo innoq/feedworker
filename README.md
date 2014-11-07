@@ -12,8 +12,6 @@ Log messages are written to stdout, exceptions are written to stderr. So:
 
     lein run config.example.clj 2> exceptions 1> log
 
-Log rotation is not included. Also, there is no cleanup for the :processed-entries-dir (see below).
-
 ## What's this?
 
 The purpose of feedworker is to make processing feeds easy. It manages which entries have been processed already and schedules periodic processing.
@@ -25,6 +23,7 @@ Its configured with a Clojure data structure like this:
                                    :processing-strategy :at-least-once
                                    :repeat 10000}}
      :processed-entries-dir "processedentries"
+     :cleanup {:keep 10 :max 50}
      :naveed {:url "<url>"
               :token "<token>"
               :conn-timeout 2000

@@ -160,6 +160,30 @@
                  (assoc worker ::tracer
                         (FileTracer. (.getAbsolutePath (::dir worker)))))))
 
+(defn files-from-new-to-old [dir]
+  (->> dir
+       .listFiles
+       (filter #(.isFile %))
+       (sort-by #(.lastModified %) >)))
+
+(defn cleanup [dir keep max]
+  (let [files (files-from-new-to-old dir)
+        c (count files)]
+    (when (> c max)
+      (log "cleaning up" dir (str "keeping " keep " of " c " files"))
+      (doseq [f (drop keep files)]
+        (.delete f)))))
+
+(defn create-cleanups [conf]
+  (map-workers conf
+               (fn [worker]
+                 (assoc worker ::cleanup
+                        (fn []
+                          (when (contains? conf :cleanup)
+                            (let [{:keys [keep max]} (:cleanup conf)
+                                  dir (::dir worker)]
+                              (cleanup dir keep max))))))))
+
 (defn create-tasks [conf]
   (map-workers conf
                (fn [worker]
@@ -170,7 +194,8 @@
                                 h (:handler worker)
                                 feed-pages ((::feed-loader worker))]
                             (when (seq feed-pages)
-                              (process-feed s t feed-pages h (::id worker) conf))))))))
+                              (process-feed s t feed-pages h (::id worker) conf)
+                              ((::cleanup worker)))))))))
 
 (defn create-schedulers [conf]
   (map-workers conf
@@ -202,6 +227,7 @@
       create-processing-strategies
       create-feed-loaders
       create-tracers
+      create-cleanups
       create-tasks))
 
 (defn schedule! [prepared-conf]
@@ -219,3 +245,15 @@
         (log-step #(str "prepared conf: " %))
         schedule!
         (log-step #(str "scheduled: " %)))))
+
+(def conf-example {:workers
+                   {:statuses-mentions {:url "http://<statuseshost>/statuses/updates?format=atom"
+                                        :handler 'feedworker.statuses/handler
+                                        :processing-strategy :at-most-once
+                                        :repeat 10000}}
+                   :processed-entries-dir "processedentries"
+                   :cleanup {:keep 10 :max 50}
+                   :naveed {:url "http://<naveedhost>/outbox"
+                            :token "<token>"
+                            :conn-timeout 2000
+                            :socket-timeout 2000}})
