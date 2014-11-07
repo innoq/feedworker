@@ -254,12 +254,13 @@
 
 (def conf-example {:workers
                    {:statuses-mentions {:url "http://<statuseshost>/statuses/updates?format=atom"
+                                        :basic-auth ["<user>" "<pwd>"]
                                         :handler 'feedworker.statuses/handler
                                         :processing-strategy :at-most-once
-                                        :repeat 10000}}
+                                        :repeat 10000
+                                        :naveed-token "<token>"}}
                    :processed-entries-dir "processedentries"
                    :cleanup {:keep 10 :max 50}
                    :naveed {:url "http://<naveedhost>/outbox"
-                            :token "<token>"
                             :conn-timeout 2000
                             :socket-timeout 2000}})

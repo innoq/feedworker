@@ -22,11 +22,11 @@ It's configured with a Clojure data structure like this:
                                    :basic-auth ["<user>" "<pwd>"]
                                    :handler notify-mentions-via-naveed
                                    :processing-strategy :at-least-once
-                                   :repeat 10000}}
+                                   :repeat 10000
+                                   :naveed-token "<token>"}}
      :processed-entries-dir "processedentries"
      :cleanup {:keep 10 :max 50}
      :naveed {:url "<url>"
-              :token "<token>"
               :conn-timeout 2000
               :socket-timeout 2000}}
 

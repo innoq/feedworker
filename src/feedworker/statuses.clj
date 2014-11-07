@@ -1,4 +1,5 @@
 (ns feedworker.statuses
+  (:gen-class)
   (:require [clj-http.client :as http]
             [feedworker.core :as feedworker :refer [log]]))
 
@@ -18,11 +19,11 @@
 (defn body [entry]
   (str (-> entry :contents first :value) " (" (:link entry) ")"))
 
-(defn naveed-req [mentions subject body naveed-conf]
+(defn naveed-req [mentions subject body token naveed-conf]
   {:form-params {:recipient mentions
                  :subject subject
                  :body body}
-   :headers {"Authorization" (str "Bearer " (:token naveed-conf))}
+   :headers {"Authorization" (str "Bearer " token)}
    :throw-exceptions false
    :conn-timeout (:conn-timeout naveed-conf 2000)
    :socket-timeout (:socket-timeout naveed-conf 2000)})
@@ -35,6 +36,7 @@
       (let [req (naveed-req mentions
                             (subject entry)
                             (body entry)
+                            (-> conf :workers worker-id :naveed-token)
                             (:naveed conf))
             resp (http/post (-> conf :naveed :url) req)]
         (if (= 503 (:status resp))
