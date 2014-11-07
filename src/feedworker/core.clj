@@ -89,7 +89,7 @@
        (take-while #(not (already-processed? processing-strategy (:uri %))))))
 
 (defn process-feed [processing-strategy tracer feed-pages handler worker-id conf]
-  (let [entries (find-unprocessed-entries feed-pages processing-strategy)] ;; find entries which so far have not been processed
+  (when-let [entries (seq (find-unprocessed-entries feed-pages processing-strategy))] ;; find entries which so far have not been processed
     (loop [[entry & remaining] (reverse entries)] ;; process entries starting from the oldest one
       (when (start-processing? processing-strategy (:uri entry)) ;; check again to make sure no one else processed the entry
                                                                  ;; (and possibly persist the fact that the entry has been processed)
@@ -169,7 +169,9 @@
 (defn cleanup [dir keep max]
   (let [files (files-from-new-to-old dir)
         c (count files)]
-    (when (> c max)
+    (when (and (> c max)
+               (not= (.lastModified (first files)) ;; only clean up if unambiguous
+                     (.lastModified (second files))))
       (log "cleaning up" dir (str "keeping " keep " of " c " files"))
       (doseq [f (drop keep files)]
         (.delete f)))))
@@ -189,13 +191,16 @@
                (fn [worker]
                  (assoc worker ::task
                         (fn []
-                          (let [s (::processing-strategy worker)
-                                t (::tracer worker)
-                                h (:handler worker)
-                                feed-pages ((::feed-loader worker))]
-                            (when (seq feed-pages)
-                              (process-feed s t feed-pages h (::id worker) conf)
-                              ((::cleanup worker)))))))))
+                          (try
+                            (let [s (::processing-strategy worker)
+                                  t (::tracer worker)
+                                  h (:handler worker)
+                                  feed-pages ((::feed-loader worker))]
+                              (when (seq feed-pages)
+                                (process-feed s t feed-pages h (::id worker) conf)
+                                ((::cleanup worker))))
+                            (catch Exception e
+                              (log "task failed" e))))))))
 
 (defn create-schedulers [conf]
   (map-workers conf
