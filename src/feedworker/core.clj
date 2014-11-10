@@ -1,5 +1,5 @@
 (ns feedworker.core
-  (:require [feedparser-clj.core :refer [parse-feed]]
+  (:require [feedparser-clj.core :as feedparser]
             [clj-http.client :as http]
             [pandect.core :as pandect])
   (:import [java.io File]
@@ -61,14 +61,14 @@
   (trace [_ entry-id msg]
     (spit (file-for processed-dir entry-id) (pr-str msg))))
 
-(defn parse-secure-feed [url user-and-pwd]
+(defn parse-feed [url user-and-pwd]
   (-> url
       (http/get {:basic-auth user-and-pwd
                  :conn-timeout 5000
                  :socket-timeout 5000
                  :as :stream})
       :body
-      parse-feed))
+      feedparser/parse-feed))
 
 (defn trace-msg [result entry]
   {:result result
@@ -147,10 +147,8 @@
                  (assoc worker ::feed-loader
                         (fn []
                           (try
-                            (if (contains? worker :basic-auth)
-                              ;; TODO load seq of all pages of feed
-                              [(parse-secure-feed (:url worker) (:basic-auth worker))]
-                              [(parse-feed (:url worker))])
+                            ;; TODO load seq of all pages of feed
+                            [(parse-feed (:url worker) (:basic-auth worker))] ;; :basic-auth may be nil
                             (catch Exception e
                               (log (str "failed to load feed with url " (:url worker) ": " e))
                               nil)))))))
