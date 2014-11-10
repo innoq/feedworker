@@ -8,6 +8,9 @@
     ;; re-seq returns a seq of vectors [<full-match> <author>]
     (map second group-matches)))
 
+(defn unlinkify [text]
+  (clojure.string/replace text #"<a[^>]*>(.+)</a>" "$1"))
+
 (defn extract-mentions [entry]
   (->> (:contents entry)
        (map :value)
@@ -17,7 +20,17 @@
   "[statuses] You were mentioned!")
 
 (defn body [entry]
-  (str (-> entry :contents first :value) " (" (:link entry) ")"))
+  (let [msg (-> entry :contents first :value unlinkify)
+        author (-> entry :authors first :name)
+        link (:link entry)]
+    (str
+"Hello,
+
+You were mentioned by " author ":
+
+\"" msg "\"
+
+" link)))
 
 (defn naveed-req [mentions subject body token naveed-conf]
   {:form-params {:recipient mentions
