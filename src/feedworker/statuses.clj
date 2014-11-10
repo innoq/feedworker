@@ -9,7 +9,7 @@
     (map second group-matches)))
 
 (defn unlinkify [text]
-  (clojure.string/replace text #"<a[^>]*>(\w+)</a>" "$1"))
+  (clojure.string/replace text #"<a[^>]*>([^<]+)</a>" "$1"))
 
 (defn extract-mentions [entry]
   (->> (:contents entry)
