@@ -201,11 +201,21 @@
                             (catch Exception e
                               (log "task failed" e))))))))
 
+(defn create-scheduler []
+  (let [s (ScheduledThreadPoolExecutor. 1)]
+    (.addShutdownHook (Runtime/getRuntime) (Thread. #(.shutdownNow s)))
+    s))
+
 (defn create-schedulers [conf]
   (map-workers conf
                (fn [worker]
-                 (assoc worker ::scheduler
-                        (ScheduledThreadPoolExecutor. 1)))))
+                 (assoc worker ::scheduler (create-scheduler)))))
+
+(defn schedule
+  ([period f]
+     (schedule (create-scheduler) 0 period f))
+  ([scheduler initial-delay period f]
+     (.scheduleAtFixedRate scheduler f initial-delay period (TimeUnit/MILLISECONDS))))
 
 (defn schedule-tasks!
   "schedules all tasks for execution and returns a map of worker-id to java.util.concurrent.ScheduledFuture"
@@ -217,10 +227,8 @@
       (let [s (::scheduler worker)
             t (::task worker)
             initial-delay (long (rand-int 5000))
-            period (:repeat worker)
-            time-unit (TimeUnit/MILLISECONDS)
-            scheduled-future (.scheduleAtFixedRate s t initial-delay period time-unit)]
-        (.addShutdownHook (Runtime/getRuntime) (Thread. #(.shutdownNow s)))
+            period (:interval worker)
+            scheduled-future (schedule s initial-delay period t)]
         [id scheduled-future]))
     (:workers conf))))
 
@@ -255,10 +263,14 @@
                                         :basic-auth ["<user>" "<pwd>"]
                                         :handler 'feedworker.statuses/handler
                                         :processing-strategy :at-most-once
-                                        :repeat 10000
+                                        :interval 10000
                                         :naveed-token "<token>"}}
                    :processed-entries-dir "processedentries"
                    :cleanup {:keep 10 :max 50}
                    :naveed {:url "http://<naveedhost>/outbox"
                             :conn-timeout 2000
-                            :socket-timeout 2000}})
+                            :read-timeout 2000}
+                   :user-index {:url "file:///Users/philipps/development/projects/feedworker/idx"
+                                :conn-timeout 2000
+                                :read-timeout 2000
+                                :interval 3600000}})

@@ -22,13 +22,13 @@ It's configured with a Clojure data structure like this:
                                    :basic-auth ["<user>" "<pwd>"]
                                    :handler notify-mentions-via-naveed
                                    :processing-strategy :at-least-once
-                                   :repeat 10000
+                                   :interval 10000
                                    :naveed-token "<token>"}}
      :processed-entries-dir "processedentries"
      :cleanup {:keep 10 :max 50}
      :naveed {:url "<url>"
               :conn-timeout 2000
-              :socket-timeout 2000}}
+              :read-timeout 2000}}
 
 All durations are given in milliseconds. The actuall processing of each feed entry is done by the given handler (here: notify-mentions-via-naveed). It's a function of three arguments:
 
