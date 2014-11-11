@@ -5,6 +5,9 @@
                                :naveed-token "<token>"}}
  :processed-entries-dir "processedentries"
  :cleanup {:keep 10 :max 50}
+ :metrics {:http {:port 9020
+                  :host "127.0.0.1"
+                  :path "/feedworker/status"}}
  :naveed {:conn-timeout 2000
           :read-timeout 2000
           :url "http://<naveed>/outbox"}}

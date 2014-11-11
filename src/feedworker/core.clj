@@ -1,9 +1,19 @@
 (ns feedworker.core
   (:require [feedparser-clj.core :as feedparser]
             [clj-http.client :as http]
-            [pandect.core :as pandect])
+            [pandect.core :as pandect]
+            [metrics.core :as metrics]
+            [metrics.utils :refer [all-metrics]]
+            [metrics.timers :refer [time!]]
+            [metrics.ring.expose :refer [render-to-basic]]
+            [ring.adapter.jetty :refer [run-jetty]])
   (:import [java.io File]
            [java.util.concurrent ScheduledThreadPoolExecutor TimeUnit]))
+
+(defn pprint-str [x]
+  (let [sw (java.io.StringWriter.)]
+    (clojure.pprint/pprint x sw)
+    (str sw)))
 
 (defn log [& msgs]
   (let [now (java.util.Date.)]
@@ -11,6 +21,9 @@
     (doseq [msg msgs]
       (when (instance? Exception msg)
         (.printStackTrace msg)))))
+
+(defmacro on-shutdown [& body]
+  `(.addShutdownHook (Runtime/getRuntime) (Thread. #(do ~@body))))
 
 (defmacro on-exception [exceptional-result & body]
   `(try
@@ -94,13 +107,20 @@
     (loop [[entry & remaining] (reverse entries)] ;; process entries starting from the oldest one
       (when (start-processing? processing-strategy (:uri entry)) ;; check again to make sure no one else processed the entry
                                                                  ;; (and possibly persist the fact that the entry has been processed)
-        (let [result (process-entry entry handler worker-id conf processing-strategy)]
+        (let [timer (.timer (::metrics-registry conf) (str (name worker-id) ".entry.processing.timer"))
+              result (time! timer
+                            (process-entry entry handler worker-id conf processing-strategy))]
           (if (= :break result)
             (mark-for-retry processing-strategy (:uri entry)) ;; break out of loop and process entry again on next run
             (do
               (trace tracer (:uri entry) (trace-msg result entry))
               (when (seq remaining)
                 (recur remaining)))))))))
+
+(defn metric-name [worker suffix]
+  (-> (::id worker)
+      name
+      (str "." suffix)))
 
 (defn map-workers [conf f]
   (update-in conf [:workers]
@@ -115,6 +135,9 @@
                (into {} (map (fn [[id worker]]
                                [id (assoc worker ::id id)])
                              workers)))))
+
+(defn create-metrics-registry [conf]
+  (assoc conf ::metrics-registry (metrics/new-registry)))
 
 (defn processing-strategy [strategy dir]
   (case strategy
@@ -146,12 +169,13 @@
                (fn [worker]
                  (assoc worker ::feed-loader
                         (fn []
-                          (try
-                            ;; TODO load seq of all pages of feed
-                            [(parse-feed (:url worker) (:basic-auth worker))] ;; :basic-auth may be nil
-                            (catch Exception e
-                              (log (str "failed to load feed with url " (:url worker) ": " e))
-                              nil)))))))
+                          (time! (.timer (::metrics-registry conf) (metric-name worker "feed.load.timer"))
+                                 (try
+                                   ;; TODO load seq of all pages of feed
+                                   [(parse-feed (:url worker) (:basic-auth worker))] ;; :basic-auth may be nil
+                                   (catch Exception e
+                                     (log (str "failed to load feed with url " (:url worker) ": " e))
+                                     nil))))))))
 
 (defn create-tracers [conf]
   (map-workers conf
@@ -165,15 +189,16 @@
        (filter #(.isFile %))
        (sort-by #(.lastModified %) >)))
 
-(defn cleanup [dir keep max]
+(defn cleanup [timer dir keep max]
   (let [files (files-from-new-to-old dir)
         c (count files)]
     (when (and (> c max)
                (not= (.lastModified (first files)) ;; only clean up if unambiguous
                      (.lastModified (second files))))
       (log "cleaning up" dir (str "keeping " keep " of " c " files"))
-      (doseq [f (drop keep files)]
-        (.delete f)))))
+      (time! timer
+             (doseq [f (drop keep files)]
+               (.delete f))))))
 
 (defn create-cleanups [conf]
   (map-workers conf
@@ -183,7 +208,8 @@
                           (when (contains? conf :cleanup)
                             (let [{:keys [keep max]} (:cleanup conf)
                                   dir (::dir worker)]
-                              (cleanup dir keep max))))))))
+                              (cleanup (.timer (::metrics-registry conf) (metric-name worker "cleanup.timer"))
+                                       dir keep max))))))))
 
 (defn create-tasks [conf]
   (map-workers conf
@@ -203,13 +229,52 @@
 
 (defn create-scheduler []
   (let [s (ScheduledThreadPoolExecutor. 1)]
-    (.addShutdownHook (Runtime/getRuntime) (Thread. #(.shutdownNow s)))
+    (on-shutdown (.shutdownNow s))
     s))
 
 (defn create-schedulers [conf]
   (map-workers conf
                (fn [worker]
                  (assoc worker ::scheduler (create-scheduler)))))
+
+(defprotocol Enrichable
+  (enrich [this basic]))
+
+(extend-type Object
+  Enrichable
+  (enrich [_ basic]
+    basic))
+
+(extend-type com.codahale.metrics.Timer
+  Enrichable
+  (enrich [this basic]
+    (assoc basic :count (.getCount this))))
+
+(defn reg->map [registry]
+  (into {} (map (fn [[name metric]] [name (enrich metric (render-to-basic metric))]) 
+                (all-metrics registry))))
+
+(defn metrics-handler [path registry]
+  (fn [req]
+    (when (and (= :get (:request-method req))
+               (.startsWith (:uri req) path))
+      {:status 200
+       :body (str "<html><head><title>feedworker metrics</title></head><body>"
+                  "<h1>metrics</h1>"
+                  "<pre>" (pprint-str (reg->map registry)) "</pre>"
+                  "<h1>your request</h1>"
+                  "<pre>" (pprint-str req) "</pre>"
+                  "</body></html>")
+       :headers {"Content-Type" "text/html"}})))
+
+(defn publish-metrics [conf]
+  (if-let [metrics-conf (get-in conf [:metrics :http])]
+    (let [jetty (run-jetty (metrics-handler (:path metrics-conf) (::metrics-registry conf))
+                           {:port (:port metrics-conf) :host (:host metrics-conf) :join? false})]
+      (log "metrics published" metrics-conf)
+      (on-shutdown (.stop jetty))
+      (assoc-in conf [:metrics :http ::jetty] jetty))
+    conf))
 
 (defn schedule
   ([period f]
@@ -235,6 +300,7 @@
 (defn prepare [conf]
   (-> conf
       add-worker-ids
+      create-metrics-registry
       create-worker-dirs
       create-processing-strategies
       create-feed-loaders
@@ -245,6 +311,7 @@
 (defn schedule! [prepared-conf]
   (-> prepared-conf
       create-schedulers
+      publish-metrics
       schedule-tasks!))
 
 (defn run! [conf]
@@ -267,6 +334,9 @@
                                         :naveed-token "<token>"}}
                    :processed-entries-dir "processedentries"
                    :cleanup {:keep 10 :max 50}
+                   :metrics {:http {:port 9020
+                                    :host "127.0.0.1"
+                                    :path "/feedworker/status"}}
                    :naveed {:url "http://<naveedhost>/outbox"
                             :conn-timeout 2000
                             :read-timeout 2000}

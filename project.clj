@@ -4,6 +4,10 @@
                  [adamwynne/feedparser-clj "0.5.2"]
                  [clj-http "1.0.0"]
                  [pandect "0.4.1"]
+                 [ring/ring-core "1.3.1"]
+                 [ring/ring-jetty-adapter "1.3.1"]
+                 [metrics-clojure "2.4.0"]
+                 [metrics-clojure-ring "2.4.0"]
                  [org.clojure/data.json "0.2.5"]] ;; just for statuses use case
   :main feedworker.statuses
   :aot [feedworker.statuses])

@@ -26,6 +26,9 @@ It's configured with a Clojure data structure like this:
                                    :naveed-token "<token>"}}
      :processed-entries-dir "processedentries"
      :cleanup {:keep 10 :max 50}
+     :metrics {:html {:port 9020
+                      :host "127.0.0.1"
+                      :path "/feedworker/metrics"}}
      :naveed {:url "<url>"
               :conn-timeout 2000
               :read-timeout 2000}}
