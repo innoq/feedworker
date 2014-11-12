@@ -66,7 +66,8 @@
 (defn extract-mentions [entry]
   (->> (:contents entry)
        (map :value)
-       (mapcat linkified-mentions)))
+       (mapcat linkified-mentions)
+       distinct))
 
 (defn subject [_]
   "[statuses] You were mentioned!")
