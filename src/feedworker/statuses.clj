@@ -79,7 +79,7 @@
     (str
 "Hello,
 
-You were mentioned by " author ":
+You were mentioned by @" author ":
 
 \"" msg "\"
 
