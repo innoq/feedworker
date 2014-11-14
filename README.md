@@ -27,7 +27,7 @@ It's configured with a Clojure data structure like this:
 All durations are given in milliseconds. The actuall processing of each feed entry is done by the given handler (here: example-handler). It's a function of three arguments:
 
 * A single feed entry as parsed by [feedparser-clj](https://github.com/scsibug/feedparser-clj).
-* The ID of the worker (e.g. :statuses-mentions).
+* The ID of the worker (e.g. :dilbert).
 * The entire configuration.
 
 Paginated feeds are not properly supported, yet. Also, feedworker needs to be able to track which entries it already processed. This is currently done by hashing each entry to generate a unique id which is then stored on disk. This means, that feedworker cannot handle feeds that contain entries which are exact duplicates (not only regarding the content but considering all metadata, e.g. timestamps).
