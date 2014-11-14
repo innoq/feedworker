@@ -4,7 +4,9 @@ Library for processing RSS/Atom feeds.
 
 ## Setup
 
-Add [feedworker "1.0.0-SNAPSHOT"] to you project.clj.
+Add this to you project.clj:
+
+     [feedworker "1.0.0-SNAPSHOT"]
 
 ## What's this?
 
