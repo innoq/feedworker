@@ -1,45 +1,34 @@
 # feedworker
 
-Utility for processing RSS/Atom feeds.
+Library for processing RSS/Atom feeds.
 
 ## Setup
 
-Install [Leiningen](http://leiningen.org/) and a recent JDK. Then:
-
-    lein run config.example.clj
-
-Log messages are written to stdout, exceptions are written to stderr. So:
-
-    lein run config.example.clj 2> exceptions 1> log
+Add [feedworker "1.0.0-SNAPSHOT"] to you project.clj.
 
 ## What's this?
 
-The purpose of Feedworker is to make processing feeds easy. It manages which entries have been processed already and schedules periodic processing.
+The purpose of feedworker is to make processing feeds easy. It manages which entries have been processed already and schedules periodic processing.
 
 It's configured with a Clojure data structure like this:
 
-    {:workers {:statuses-mentions {:url "http://localhost:8080/statuses/updates?format=atom"
-                                   :basic-auth ["<user>" "<pwd>"]
-                                   :handler notify-mentions-via-naveed
-                                   :processing-strategy :at-least-once
-                                   :interval 10000
-                                   :naveed-token "<token>"}}
+    {:workers
+     {:dilbert {:url "http://feed.dilbert.com/dilbert/most_popular?format=xml"
+                :handler example-handler
+                :processing-strategy :at-most-once
+                :interval 10000}}
      :processed-entries-dir "processedentries"
-     :cleanup {:keep 10 :max 50}
-     :metrics {:html {:port 9020
-                      :host "127.0.0.1"
-                      :path "/feedworker/metrics"}}
-     :naveed {:url "<url>"
-              :conn-timeout 2000
-              :read-timeout 2000}}
+     :cleanup {:keep 10 :max 200}
+     :metrics {:http {:port 8080
+                      :path "/feedworker/status"}}}
 
-All durations are given in milliseconds. The actuall processing of each feed entry is done by the given handler (here: notify-mentions-via-naveed). It's a function of three arguments:
+All durations are given in milliseconds. The actuall processing of each feed entry is done by the given handler (here: example-handler). It's a function of three arguments:
 
 * A single feed entry as parsed by [feedparser-clj](https://github.com/scsibug/feedparser-clj).
 * The ID of the worker (e.g. :statuses-mentions).
 * The entire configuration.
 
-Paginated feeds are not properly supported, yet.
+Paginated feeds are not properly supported, yet. Also, feedworker needs to be able to track which entries it already processed. This is currently done by hashing each entry to generate a unique id which is then stored on disk. This means, that feedworker cannot handle feeds that contain entries which are exact duplicates (not only regarding the content but considering all metadata, e.g. timestamps).
 
 ## License
 
