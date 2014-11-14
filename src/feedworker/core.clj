@@ -74,19 +74,27 @@
   (trace [_ entry-id msg]
     (spit (file-for processed-dir entry-id) (pr-str msg))))
 
-(defn parse-feed [url user-and-pwd]
-  (-> url
-      (http/get {:basic-auth user-and-pwd
-                 :conn-timeout 5000
-                 :socket-timeout 5000
-                 :as :stream})
-      :body
-      feedparser/parse-feed))
+(defn parse-feed
+  ([url]
+     (parse-feed url nil))
+  ([url user-and-pwd]
+     (-> url
+         (http/get {:basic-auth user-and-pwd
+                    :conn-timeout 5000
+                    :socket-timeout 5000
+                    :as :stream})
+         :body
+         feedparser/parse-feed)))
 
 (defn trace-msg [result entry]
   {:result result
    :entry entry
    :processed-on (java.util.Date.)})
+
+(defn unique-id
+  "creates a unique id for the entry"
+  [entry]
+  (pandect/sha1 (pr-str entry))) ;; TODO find more efficient way
 
 (defn process-entry [entry handler worker-id conf processing-strategy]
   (let [result (try
@@ -94,26 +102,27 @@
                  (catch Exception e
                    (log "failed processing" (pr-str entry) e)
                    e))]
-    (after-processing processing-strategy (:uri entry))
+    (after-processing processing-strategy (unique-id entry))
     result))
 
 (defn find-unprocessed-entries [feed-pages processing-strategy]
   (->> feed-pages
        (mapcat :entries)
-       (take-while #(not (already-processed? processing-strategy (:uri %))))))
+       (take-while #(not (already-processed? processing-strategy (unique-id %))))))
 
 (defn process-feed [processing-strategy tracer feed-pages handler worker-id conf]
   (when-let [entries (seq (find-unprocessed-entries feed-pages processing-strategy))] ;; find entries which so far have not been processed
+    (log (str "found " (count entries) " entry/entries for processing in feed " (-> conf :workers worker-id :url)))
     (loop [[entry & remaining] (reverse entries)] ;; process entries starting from the oldest one
-      (when (start-processing? processing-strategy (:uri entry)) ;; check again to make sure no one else processed the entry
+      (when (start-processing? processing-strategy (unique-id entry)) ;; check again to make sure no one else processed the entry
                                                                  ;; (and possibly persist the fact that the entry has been processed)
         (let [timer (.timer (::metrics-registry conf) (str (name worker-id) ".entry.processing.timer"))
               result (time! timer
                             (process-entry entry handler worker-id conf processing-strategy))]
           (if (= :break result)
-            (mark-for-retry processing-strategy (:uri entry)) ;; break out of loop and process entry again on next run
+            (mark-for-retry processing-strategy (unique-id entry)) ;; break out of loop and process entry again on next run
             (do
-              (trace tracer (:uri entry) (trace-msg result entry))
+              (trace tracer (unique-id entry) (trace-msg result entry))
               (when (seq remaining)
                 (recur remaining)))))))))
 
@@ -325,22 +334,15 @@
         schedule!
         (log-step #(str "scheduled: " %)))))
 
-(def conf-example {:workers
-                   {:statuses-mentions {:url "http://<statuseshost>/statuses/updates?format=atom"
-                                        :basic-auth ["<user>" "<pwd>"]
-                                        :handler 'feedworker.statuses/handler
-                                        :processing-strategy :at-most-once
-                                        :interval 10000
-                                        :naveed-token "<token>"}}
+(defn example-handler [entry worker-id conf]
+  (log "worker" worker-id "processing entry with title" (:title entry)))
+
+(def example-conf {:workers
+                   {:dilbert {:url "http://feed.dilbert.com/dilbert/most_popular?format=xml"
+                              :handler example-handler
+                              :processing-strategy :at-most-once
+                              :interval 10000}}
                    :processed-entries-dir "processedentries"
-                   :cleanup {:keep 10 :max 50}
-                   :metrics {:http {:port 9020
-                                    :host "127.0.0.1"
-                                    :path "/feedworker/status"}}
-                   :naveed {:url "http://<naveedhost>/outbox"
-                            :conn-timeout 2000
-                            :read-timeout 2000}
-                   :user-index {:url "file:///Users/philipps/development/projects/feedworker/idx"
-                                :conn-timeout 2000
-                                :read-timeout 2000
-                                :interval 3600000}})
+                   :cleanup {:keep 10 :max 200}
+                   :metrics {:http {:port 8080
+                                    :path "/feedworker/status"}}})
