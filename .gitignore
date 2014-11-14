@@ -18,6 +18,3 @@ bin/
 processedentries
 .#*
 \#*#
-testconfig.clj
-deployment
-user-idx.json
