@@ -56,7 +56,7 @@
       identity))
 
 (defn linkified-mentions [text]
-  (let [group-matches (re-seq #"@<a[^>]*>(\w+)</a>" text)]
+  (let [group-matches (re-seq #"@<a[^>]*>(\S+)</a>" text)]
     ;; re-seq returns a seq of vectors [<full-match> <author>]
     (map second group-matches)))
 
@@ -69,12 +69,15 @@
        (mapcat linkified-mentions)
        distinct))
 
-(defn subject [_]
-  "[statuses] You were mentioned!")
+(defn author [entry]
+  (-> entry :authors first :name))
+
+(defn subject [entry]
+  (str "[statuses] You were mentioned by @" (author entry) "!"))
 
 (defn body [entry user-lookup]
   (let [msg (-> entry :contents first :value unlinkify)
-        author (-> entry :authors first :name user-lookup)
+        author (user-lookup (author entry))
         link (:link entry)]
     (str
 "Hello,
@@ -85,8 +88,9 @@ You were mentioned by @" author ":
 
 " link)))
 
-(defn naveed-req [mentions subject body token naveed-conf]
+(defn naveed-req [mentions sender subject body token naveed-conf]
   {:form-params {:recipient mentions
+                 :sender sender
                  :subject subject
                  :body body}
    :headers {"Authorization" (str "Bearer " token)}
@@ -100,6 +104,7 @@ You were mentioned by @" author ":
     (log "extracted mentions" mentions)
     (if (seq mentions)
       (let [req (naveed-req mentions
+                            (author entry)
                             (subject entry)
                             (body entry (::user-lookup conf))
                             (-> conf :workers worker-id :naveed-token)
