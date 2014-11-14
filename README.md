@@ -24,7 +24,7 @@ It's configured with a Clojure data structure like this:
      :metrics {:http {:port 8080
                       :path "/feedworker/status"}}}
 
-All durations are given in milliseconds. The actuall processing of each feed entry is done by the given handler (here: example-handler). It's a function of three arguments:
+All durations are given in milliseconds. The actual processing of each feed entry is done by the given handler (here: example-handler). It's a function of three arguments:
 
 * A single feed entry as parsed by [feedparser-clj](https://github.com/scsibug/feedparser-clj).
 * The ID of the worker (e.g. :dilbert).
