@@ -1,4 +1,4 @@
-(defproject feedworker "0.1.0-SNAPSHOT"
+(defproject feedworker "0.1.0"
   :description "muncher of feeds"
   :url "https://github.com/innoq/feedworker"
   :license {:name "Apache 2.0"
